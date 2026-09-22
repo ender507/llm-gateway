@@ -36,20 +36,26 @@ func ListModelsHandler(c *gin.Context) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		log.Errorw("build ollama tags request failed", "trace_id", traceID, "err", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "create request failed", "type": utils.InternalError})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{"message": "create request failed", "type": utils.InternalError},
+		})
 		return
 	}
 	client := http.DefaultClient
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Errorw("call ollama /api/tags failed", "trace_id", traceID, "err", err.Error())
-		c.JSON(http.StatusBadGateway, gin.H{"error": "fetch models from ollama failed", "type": utils.UpstreamError})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{"message": "fetch models from ollama failed", "type": utils.UpstreamError},
+		})
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		log.Errorw("ollama return non-200 status", "trace_id", traceID, "status", resp.StatusCode)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "ollama upstream error", "type": utils.UpstreamError})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{"message": "ollama upstream error", "type": utils.UpstreamError},
+		})
 		return
 	}
 	var ollamaResp OllamaTagsResp
@@ -59,7 +65,9 @@ func ListModelsHandler(c *gin.Context) {
 			"trace_id", traceID,
 			"err", err.Error(),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "parse upstream json failed", "type": utils.InternalError})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{"message": "parse upstream json failed", "type": utils.InternalError},
+		})
 		return
 	}
 

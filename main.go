@@ -26,7 +26,7 @@ func main() {
 
 	v1Group := r.Group("/v1")
 	v1Group.GET("/models", handler.ListModelsHandler)
-	v1Group.GET("/chat/completions", handler.ChatCompletionsHandler)
+	v1Group.POST("/chat/completions", handler.ChatCompletionsHandler)
 
 	logger.Infow("service starting", "listen_addr", ":8080")
 	err = r.Run(":8080")

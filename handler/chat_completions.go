@@ -106,7 +106,6 @@ func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Respon
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
-	c.Writer.WriteHeader(http.StatusOK)
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -116,6 +115,7 @@ func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Respon
 		})
 		return
 	}
+	c.Writer.WriteHeader(http.StatusOK)
 
 	scanner := bufio.NewScanner(upstreamResp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
