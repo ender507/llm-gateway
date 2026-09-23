@@ -23,23 +23,21 @@ func ChatCompletionsHandler(c *gin.Context) {
 	traceID, _ := c.Get(utils.TraceID)
 	log := utils.GetLogger()
 	ctx := c.Request.Context()
+	ctx, cancel := context.WithTimeout(ctx, utils.HandleRequestTimeout)
+	defer cancel()
 	url := utils.OllamaDomain + "/v1/chat/completions"
 
 	bodyBytes, reqBody, err := readChatRequestBody(c)
 	if err != nil {
 		log.Errorw("read request body failed", "trace_id", traceID, "err", err.Error())
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{"message": "read request body failed", "type": utils.InvalidRequestError},
-		})
+		errorResponse(c, http.StatusBadRequest, fmt.Sprintf("read request body failed, err: %s", err), invalidRequestError)
 		return
 	}
 
 	ollamaReq, err := buildOllamaChatRequest(ctx, url, bodyBytes)
 	if err != nil {
 		log.Errorw("build ollama request failed", "trace_id", traceID, "err", err.Error())
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{"message": "build ollama request failed", "type": utils.InternalError},
-		})
+		errorResponse(c, http.StatusBadRequest, fmt.Sprintf("build ollama request failed, err: %s", err), internalError)
 		return
 	}
 
@@ -47,9 +45,7 @@ func ChatCompletionsHandler(c *gin.Context) {
 	resp, err := http.DefaultClient.Do(ollamaReq)
 	if err != nil {
 		log.Errorw("call ollama chat failed", "trace_id", traceID, "model", reqBody.Model, "err", err.Error())
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": gin.H{"message": "upstream ollama unreachable", "type": utils.UpstreamError},
-		})
+		errorResponse(c, http.StatusBadGateway, fmt.Sprintf("upstream ollama unreachable, err: %s", err), upstreamError)
 		return
 	}
 	defer resp.Body.Close()
@@ -58,22 +54,18 @@ func ChatCompletionsHandler(c *gin.Context) {
 		errBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Errorw("read upstream error body failed", "trace_id", traceID, "model", reqBody.Model, "status", resp.StatusCode, "err", err.Error())
-			c.JSON(http.StatusBadGateway, gin.H{
-				"error": gin.H{"message": "upstream service status not 200", "type": utils.UpstreamError},
-			})
+			errorResponse(c, http.StatusBadGateway, fmt.Sprintf("upstream service status is (%v) not 200, and body read failed: %s", resp.StatusCode, err), upstreamError)
 			return
 		}
 		log.Errorw("ollama return non-200 value", "trace_id", traceID, "model", reqBody.Model, "raw_body", string(errBody), "status", resp.StatusCode)
-		c.JSON(resp.StatusCode, gin.H{
-			"error": gin.H{"message": string(errBody), "type": utils.UpstreamError},
-		})
+		errorResponse(c, resp.StatusCode, fmt.Sprintf("upstream service status not 200, body: %s", errBody), upstreamError)
 		return
 	}
 
 	if reqBody.Stream {
-		handleStreamChat(c, start, resp)
+		handleStreamChat(c, start, resp, reqBody.Model)
 	} else {
-		handleNonStreamChat(c, start, resp)
+		handleNonStreamChat(c, start, resp, reqBody.Model)
 	}
 
 }
@@ -100,7 +92,7 @@ func buildOllamaChatRequest(ctx context.Context, url string, body []byte) (*http
 }
 
 // handleStreamChat 流式SSE转发
-func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Response) {
+func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Response, modelName string) {
 	traceID, _ := c.Get(utils.TraceID)
 	log := utils.GetLogger()
 	c.Header("Content-Type", "text/event-stream")
@@ -110,9 +102,7 @@ func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Respon
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		log.Errorw("response writer does not support flusher", "trace_id", traceID)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{"message": "response writer does not support flusher", "type": utils.InvalidRequestError},
-		})
+		errorResponse(c, http.StatusInternalServerError, "response writer does not support flusher", invalidRequestError)
 		return
 	}
 	c.Writer.WriteHeader(http.StatusOK)
@@ -128,7 +118,7 @@ func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Respon
 
 		if firstToken && line != "" && line != "data: [DONE]" {
 			ttft := time.Since(start)
-			log.Infow("ttft recorded", "trace_id", traceID, "ttft_ms", ttft.Milliseconds())
+			log.Infow("ttft recorded", "trace_id", traceID, "ttft_ms", ttft.Milliseconds(), "model_name", modelName)
 			firstToken = false
 		}
 	}
@@ -146,17 +136,15 @@ func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Respon
 }
 
 // handleNonStreamChat 非流式，一次性返回
-func handleNonStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Response) {
+func handleNonStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Response, modelName string) {
 	traceID, _ := c.Get(utils.TraceID)
 	log := utils.GetLogger()
 	respBody, err := io.ReadAll(upstreamResp.Body)
 	if err != nil {
 		log.Errorw("read non-stream ollama response failed", "trace_id", traceID, "err", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{"message": fmt.Sprintf("read non-stream ollama response failed: %v", err), "type": utils.InternalError},
-		})
+		errorResponse(c, http.StatusInternalServerError, fmt.Sprintf("read non-stream ollama response failed: %v", err), internalError)
 		return
 	}
-	log.Infow("chat non-stream completed", "trace_id", traceID, "cost_ms", time.Since(start).Milliseconds())
+	log.Infow("chat non-stream completed", "trace_id", traceID, "cost_ms", time.Since(start).Milliseconds(), "model_name", modelName)
 	c.Data(http.StatusOK, "application/json", respBody)
 }

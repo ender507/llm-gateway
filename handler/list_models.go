@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/ender507/llm-gateway/utils"
@@ -30,32 +32,28 @@ func ListModelsHandler(c *gin.Context) {
 	traceID, _ := c.Get(utils.TraceID)
 	log := utils.GetLogger()
 	ctx := c.Request.Context()
+	ctx, cancel := context.WithTimeout(ctx, utils.HandleRequestTimeout)
+	defer cancel()
 	url := utils.OllamaDomain + "/api/tags"
 
 	// 请求 ollama，获取现有模型信息
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		log.Errorw("build ollama tags request failed", "trace_id", traceID, "err", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{"message": "create request failed", "type": utils.InternalError},
-		})
+		errorResponse(c, http.StatusInternalServerError, fmt.Sprintf("create request failed: %s", err), internalError)
 		return
 	}
 	client := http.DefaultClient
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Errorw("call ollama /api/tags failed", "trace_id", traceID, "err", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{"message": "fetch models from ollama failed", "type": utils.UpstreamError},
-		})
+		errorResponse(c, http.StatusInternalServerError, fmt.Sprintf("fetch models from ollama failed: %s", err), upstreamError)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		log.Errorw("ollama return non-200 status", "trace_id", traceID, "status", resp.StatusCode)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{"message": "ollama upstream error", "type": utils.UpstreamError},
-		})
+		errorResponse(c, http.StatusInternalServerError, fmt.Sprintf("ollama response code(%v) not 200", resp.StatusCode), upstreamError)
 		return
 	}
 	var ollamaResp OllamaTagsResp
@@ -65,9 +63,7 @@ func ListModelsHandler(c *gin.Context) {
 			"trace_id", traceID,
 			"err", err.Error(),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{"message": "parse upstream json failed", "type": utils.InternalError},
-		})
+		errorResponse(c, http.StatusInternalServerError, fmt.Sprintf("parse upstream json failed: %s", err), internalError)
 		return
 	}
 
