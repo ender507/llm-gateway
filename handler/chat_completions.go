@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ender507/llm-gateway/internal/llm"
 	"github.com/ender507/llm-gateway/utils"
 	"github.com/gin-gonic/gin"
 )
@@ -25,7 +26,6 @@ func ChatCompletionsHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	ctx, cancel := context.WithTimeout(ctx, utils.HandleRequestTimeout)
 	defer cancel()
-	url := utils.OllamaDomain + "/v1/chat/completions"
 
 	bodyBytes, reqBody, err := readChatRequestBody(c)
 	if err != nil {
@@ -34,9 +34,17 @@ func ChatCompletionsHandler(c *gin.Context) {
 		return
 	}
 
+	backendList := llm.GetBackendManager().GetBackendsByModel(reqBody.Model)
+	if len(backendList) == 0 {
+		log.Errorw("no backend available", "trace_id", traceID, "model", reqBody.Model)
+		errorResponse(c, http.StatusServiceUnavailable, "no backend available", upstreamError)
+		return
+	}
+	url := backendList[0].Endpoint + "/v1/chat/completions"
+
 	ollamaReq, err := buildOllamaChatRequest(ctx, url, bodyBytes)
 	if err != nil {
-		log.Errorw("build ollama request failed", "trace_id", traceID, "err", err.Error())
+		log.Errorw("build ollama request failed", "trace_id", traceID, "model", reqBody.Model, "err", err.Error())
 		errorResponse(c, http.StatusBadRequest, fmt.Sprintf("build ollama request failed, err: %s", err), internalError)
 		return
 	}
@@ -132,7 +140,7 @@ func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Respon
 		}
 	}
 
-	log.Infow("chat stream completed", "trace_id", traceID, "cost_ms", time.Since(start).Milliseconds())
+	log.Infow("chat stream completed", "trace_id", traceID, "cost_ms", time.Since(start).Milliseconds(), "model_name", modelName)
 }
 
 // handleNonStreamChat 非流式，一次性返回

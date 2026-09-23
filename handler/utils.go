@@ -14,6 +14,6 @@ const (
 
 func errorResponse(c *gin.Context, httpCode int, msg string, errType HandlerErrorType) {
 	c.JSON(httpCode, gin.H{
-		"error": gin.H{"message": msg, "type": errType, "code": -1},
+		"error": gin.H{"message": msg, "type": errType, "code": nil},
 	})
 }

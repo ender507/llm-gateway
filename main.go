@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ender507/llm-gateway/handler"
+	"github.com/ender507/llm-gateway/internal/llm"
 	"github.com/ender507/llm-gateway/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -17,6 +18,11 @@ func main() {
 		panic(fmt.Errorf("failed to init logger: %w", err))
 	}
 	logger := utils.GetLogger()
+
+	// 初始化后端管理器
+	backendManager := llm.InitBackendManager()
+	backendManager.StartHealthCheck(utils.BackendHealthCheckDuration)
+	backendManager.Register(utils.OllamaDomain)
 
 	// 注册服务路由与中间件
 	gin.SetMode(gin.DebugMode)

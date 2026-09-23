@@ -10,4 +10,5 @@
   - consts: 基本常量
   - logger: 提供日志实例
 - handler: 请求处理
-- gateway: 实现路由网关的核心逻辑   
+- internal: 
+  - llm: 后端llm实例管理   
