@@ -171,7 +171,7 @@ func (m *BackendManager) GetBackendBySession(sessionID string, candidates []*Bac
 		return nil, false
 	}
 	if sessionID == "" {
-		return candidates[0], false
+		return PickLeastConcurrent(candidates), false
 	}
 
 	m.mu.RLock()
@@ -193,8 +193,8 @@ func (m *BackendManager) GetBackendBySession(sessionID string, candidates []*Bac
 		m.mu.Unlock()
 	}
 
-	// 新会话或绑定失效，直接选第一个候选
-	selected := candidates[0]
+	// 新会话或会话超时失效
+	selected := PickLeastConcurrent(candidates)
 	m.mu.Lock()
 	m.sessionMap[sessionID] = &sessionBinding{
 		backend:    selected,

@@ -48,6 +48,10 @@ func ChatCompletionsHandler(c *gin.Context) {
 	}
 	sessionID := c.GetHeader("X-Session-Id")
 	selected, reused := backendManager.GetBackendBySession(sessionID, backendList)
+	selected.IncrConcurrency()
+	defer func() {
+		selected.DecrConcurrency()
+	}()
 
 	log.Infow("backend selected", "trace_id", traceID, "model", reqBody.Model, "session_id", sessionID, "endpoint", selected.Endpoint, "reused_session", reused)
 
