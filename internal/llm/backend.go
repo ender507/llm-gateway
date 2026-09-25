@@ -42,7 +42,9 @@ func (b *Backend) IncrConcurrency() {
 func (b *Backend) DecrConcurrency() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.activeConcurrency--
+	if b.activeConcurrency > 0 {
+		b.activeConcurrency--
+	}
 }
 
 func (b *Backend) ActiveConcurrency() int {

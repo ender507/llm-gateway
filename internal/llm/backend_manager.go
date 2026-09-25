@@ -100,10 +100,8 @@ func (m *BackendManager) CheckHealth(b *Backend) {
 		"new_status", newStatus,
 		"models", loadedModels,
 	)
-	m.mu.Lock()
 	b.SetStatus(newStatus)
 	b.SetModels(loadedModels)
-	m.mu.Unlock()
 }
 
 func (m *BackendManager) StartHealthCheck(interval time.Duration) {
