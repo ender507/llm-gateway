@@ -39,14 +39,19 @@ func ChatCompletionsHandler(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	backendList := llm.GetBackendManager().GetBackendsByModel(reqBody.Model)
+	backendManager := llm.GetBackendManager()
+	backendList := backendManager.GetBackendsByModel(reqBody.Model)
 	if len(backendList) == 0 {
 		log.Errorw("no backend available", "trace_id", traceID, "model", reqBody.Model)
 		errorResponse(c, http.StatusServiceUnavailable, "no backend available", upstreamError)
 		return
 	}
-	url := backendList[0].Endpoint + "/v1/chat/completions"
+	sessionID := c.GetHeader("X-Session-Id")
+	selected, reused := backendManager.GetBackendBySession(sessionID, backendList)
 
+	log.Infow("backend selected", "trace_id", traceID, "model", reqBody.Model, "session_id", sessionID, "endpoint", selected.Endpoint, "reused_session", reused)
+
+	url := selected.Endpoint + "/v1/chat/completions"
 	ollamaReq, err := buildOllamaChatRequest(ctx, url, bodyBytes)
 	if err != nil {
 		log.Errorw("build ollama request failed", "trace_id", traceID, "model", reqBody.Model, "err", err.Error())

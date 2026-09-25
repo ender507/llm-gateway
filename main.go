@@ -22,7 +22,9 @@ func main() {
 	// 初始化后端管理器
 	backendManager := llm.InitBackendManager()
 	backendManager.StartHealthCheck(utils.BackendHealthCheckDuration)
-	backendManager.Register(utils.OllamaDomain)
+	backendManager.StartSessionCleaner(utils.SessionCleanDuration, utils.SessionAffinityTTL)
+	backendManager.Register(utils.OllamaDomain1)
+	backendManager.Register(utils.OllamaDomain2)
 
 	// 注册服务路由与中间件
 	gin.SetMode(gin.DebugMode)
