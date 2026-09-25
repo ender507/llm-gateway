@@ -24,8 +24,6 @@ func ChatCompletionsHandler(c *gin.Context) {
 	traceID, _ := c.Get(utils.TraceID)
 	log := utils.GetLogger()
 	ctx := c.Request.Context()
-	ctx, cancel := context.WithTimeout(ctx, utils.HandleRequestTimeout)
-	defer cancel()
 
 	bodyBytes, reqBody, err := readChatRequestBody(c)
 	if err != nil {
@@ -33,6 +31,13 @@ func ChatCompletionsHandler(c *gin.Context) {
 		errorResponse(c, http.StatusBadRequest, fmt.Sprintf("read request body failed, err: %s", err), invalidRequestError)
 		return
 	}
+
+	timeout := utils.HandleRequestTimeout
+	if reqBody.Stream {
+		timeout = utils.HandleRequestStreamTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	backendList := llm.GetBackendManager().GetBackendsByModel(reqBody.Model)
 	if len(backendList) == 0 {
