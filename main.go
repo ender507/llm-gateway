@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/ender507/llm-gateway/handler"
 	"github.com/ender507/llm-gateway/internal/llm"
 	"github.com/ender507/llm-gateway/utils"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 func main() {
@@ -35,6 +37,8 @@ func main() {
 	v1Group := r.Group("/v1")
 	v1Group.GET("/models", handler.ListModelsHandler)
 	v1Group.POST("/chat/completions", handler.ChatCompletionsHandler)
+
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	logger.Infow("service starting", "listen_addr", ":8080")
 	err = r.Run(":8080")

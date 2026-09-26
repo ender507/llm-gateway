@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/ender507/llm-gateway/internal/metrics"
 )
 
 type Status string
@@ -41,6 +43,7 @@ func (b *Backend) IncrConcurrency() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.activeConcurrency++
+	metrics.SetBackendConcurrency(b.Endpoint, b.activeConcurrency)
 }
 
 func (b *Backend) DecrConcurrency() {
@@ -48,6 +51,7 @@ func (b *Backend) DecrConcurrency() {
 	defer b.mu.Unlock()
 	if b.activeConcurrency > 0 {
 		b.activeConcurrency--
+		metrics.SetBackendConcurrency(b.Endpoint, b.activeConcurrency)
 	}
 }
 

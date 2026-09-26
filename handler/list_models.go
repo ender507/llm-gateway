@@ -29,7 +29,7 @@ func ListModelsHandler(c *gin.Context) {
 
 	modelBackendMap := llm.GetBackendManager().ModelBackendMap()
 	if len(modelBackendMap) == 0 {
-		errorResponse(c, http.StatusServiceUnavailable, "no available backend", upstreamError)
+		errorResponse(c, "-", http.StatusServiceUnavailable, "no available backend", upstreamError)
 		return
 	}
 	resp := ListModelsResp{
