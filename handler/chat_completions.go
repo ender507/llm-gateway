@@ -48,10 +48,13 @@ func ChatCompletionsHandler(c *gin.Context) {
 	}
 	sessionID := c.GetHeader("X-Session-Id")
 	selected, reused := backendManager.GetBackendBySession(sessionID, backendList)
-	selected.IncrConcurrency()
-	defer func() {
-		selected.DecrConcurrency()
-	}()
+	acquired := selected.TryAcquire(ctx, utils.QueueTimeout)
+	if !acquired {
+		log.Errorw("backend busy, acquire timeout", "trace_id", traceID, "endpoint", selected.Endpoint)
+		errorResponse(c, http.StatusServiceUnavailable, "backend busy, please retry later", upstreamError)
+		return
+	}
+	defer selected.Release()
 
 	log.Infow("backend selected", "trace_id", traceID, "model", reqBody.Model, "session_id", sessionID, "endpoint", selected.Endpoint, "reused_session", reused)
 

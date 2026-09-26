@@ -13,4 +13,7 @@ const (
 	SessionAffinityTTL         = 20 * time.Second // 会话亲和过期时间
 
 	TraceID = "trace_id"
+
+	MaxBackendConcurrency = 2               // 每个后端最大并发数
+	QueueTimeout          = 5 * time.Second // 并发数达到最大值时，新请求排队最长等待时间
 )

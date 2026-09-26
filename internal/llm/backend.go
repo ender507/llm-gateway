@@ -1,7 +1,9 @@
 package llm
 
 import (
+	"context"
 	"sync"
+	"time"
 )
 
 type Status string
@@ -16,6 +18,8 @@ type Backend struct {
 	status            Status
 	models            []string
 	activeConcurrency int
+	maxConcurrency    int
+	sem               chan struct{} // 信号量通道，容量 = maxConcurrency
 	mu                sync.RWMutex
 }
 
@@ -80,4 +84,24 @@ func PickLeastConcurrent(candidates []*Backend) *Backend {
 		}
 	}
 	return best
+}
+
+func (b *Backend) TryAcquire(ctx context.Context, queueTimeout time.Duration) bool {
+	timer := time.NewTimer(queueTimeout)
+	defer timer.Stop()
+
+	select {
+	case b.sem <- struct{}{}:
+		b.IncrConcurrency()
+		return true
+	case <-timer.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (b *Backend) Release() {
+	<-b.sem
+	b.DecrConcurrency()
 }

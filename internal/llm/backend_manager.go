@@ -43,8 +43,10 @@ func (m *BackendManager) Register(endpoint string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.backends[endpoint] = &Backend{
-		Endpoint: endpoint,
-		status:   StatusUnhealthy, // 初始标记不健康，等健康检查确认
+		Endpoint:       endpoint,
+		status:         StatusUnhealthy, // 初始标记不健康，等健康检查确认
+		maxConcurrency: utils.MaxBackendConcurrency,
+		sem:            make(chan struct{}, utils.MaxBackendConcurrency),
 	}
 }
 
