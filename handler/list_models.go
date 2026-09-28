@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
+	"github.com/ender507/llm-gateway/internal/errs"
 	"github.com/ender507/llm-gateway/internal/llm"
 	"github.com/ender507/llm-gateway/utils"
 	"github.com/gin-gonic/gin"
@@ -29,7 +31,9 @@ func ListModelsHandler(c *gin.Context) {
 
 	modelBackendMap := llm.GetBackendManager().ModelBackendMap()
 	if len(modelBackendMap) == 0 {
-		errorResponse(c, "-", http.StatusServiceUnavailable, "no available backend", upstreamError)
+		err := errs.UpstreamServiceUnavailable("no available backend", fmt.Errorf("available backend num is 0"))
+		log.Errorw(err.Error(), "trace_id", traceID)
+		errorResponse(c, "-", err)
 		return
 	}
 	resp := ListModelsResp{
@@ -45,9 +49,6 @@ func ListModelsHandler(c *gin.Context) {
 			OwnedBy: "ollama",
 		})
 	}
-	log.Infow("list models success",
-		"trace_id", traceID,
-		"model_count", len(resp.Data),
-	)
+	log.Infow("list models success", "trace_id", traceID, "model_count", len(resp.Data))
 	c.JSON(http.StatusOK, resp)
 }

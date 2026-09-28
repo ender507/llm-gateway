@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ender507/llm-gateway/internal/errs"
 	"github.com/ender507/llm-gateway/internal/llm"
 	"github.com/ender507/llm-gateway/internal/metrics"
 	"github.com/ender507/llm-gateway/utils"
@@ -29,8 +30,9 @@ func ChatCompletionsHandler(c *gin.Context) {
 
 	bodyBytes, reqBody, err := readChatRequestBody(c)
 	if err != nil {
+		err := errs.BadRequest("read request body failed", err)
 		log.Errorw("read request body failed", "trace_id", traceID, "err", err.Error())
-		errorResponse(c, "-", http.StatusBadRequest, fmt.Sprintf("read request body failed, err: %s", err), invalidRequestError)
+		errorResponse(c, "-", err)
 		return
 	}
 
@@ -44,17 +46,19 @@ func ChatCompletionsHandler(c *gin.Context) {
 	backendManager := llm.GetBackendManager()
 	backendList := backendManager.GetBackendsByModel(reqBody.Model)
 	if len(backendList) == 0 {
+		err := errs.UpstreamServiceUnavailable("no backend available", fmt.Errorf("available backend num is 0"))
 		log.Errorw("no backend available", "trace_id", traceID, "model", reqBody.Model)
-		errorResponse(c, reqBody.Model, http.StatusServiceUnavailable, "no backend available", upstreamError)
+		errorResponse(c, reqBody.Model, err)
 		return
 	}
 	sessionID := c.GetHeader("X-Session-Id")
 	selected, reused := backendManager.GetBackendBySession(sessionID, backendList)
 	acquired := selected.TryAcquire(ctx, utils.QueueTimeout)
 	if !acquired {
+		err := errs.UpstreamServiceUnavailable("backend busy", fmt.Errorf("backend %s: acquire timeout after %s", selected.Endpoint, utils.QueueTimeout))
 		metrics.IncQueueTimeout(selected.Endpoint)
-		log.Errorw("backend busy, acquire timeout", "trace_id", traceID, "endpoint", selected.Endpoint)
-		errorResponse(c, reqBody.Model, http.StatusServiceUnavailable, "backend busy, please retry later", upstreamError)
+		log.Errorw("backend busy", "trace_id", traceID, "err", err.Error())
+		errorResponse(c, reqBody.Model, err)
 		return
 	}
 	defer selected.Release()
@@ -64,29 +68,33 @@ func ChatCompletionsHandler(c *gin.Context) {
 	url := selected.Endpoint + "/v1/chat/completions"
 	ollamaReq, err := buildOllamaChatRequest(ctx, url, bodyBytes)
 	if err != nil {
+		err := errs.BadRequest("build ollama request failed", err)
 		log.Errorw("build ollama request failed", "trace_id", traceID, "model", reqBody.Model, "err", err.Error())
-		errorResponse(c, reqBody.Model, http.StatusBadRequest, fmt.Sprintf("build ollama request failed, err: %s", err), internalError)
+		errorResponse(c, reqBody.Model, err)
 		return
 	}
 
 	start := time.Now()
 	resp, err := http.DefaultClient.Do(ollamaReq)
 	if err != nil {
+		err := errs.UpstreamBadGateway("failed to call ollama", err)
 		log.Errorw("call ollama chat failed", "trace_id", traceID, "model", reqBody.Model, "err", err.Error())
-		errorResponse(c, reqBody.Model, http.StatusBadGateway, fmt.Sprintf("upstream ollama unreachable, err: %s", err), upstreamError)
+		errorResponse(c, reqBody.Model, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		errBody, err := io.ReadAll(resp.Body)
-		if err != nil {
+		errBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			err := errs.UpstreamBadGateway(fmt.Sprintf("upstream service status(%v) is not 200, and body read failed", resp.StatusCode), readErr)
 			log.Errorw("read upstream error body failed", "trace_id", traceID, "model", reqBody.Model, "status", resp.StatusCode, "err", err.Error())
-			errorResponse(c, reqBody.Model, http.StatusBadGateway, fmt.Sprintf("upstream service status is (%v) not 200, and body read failed: %s", resp.StatusCode, err), upstreamError)
+			errorResponse(c, reqBody.Model, err)
 			return
 		}
+		upstreamErr := errs.HandleUpstreamError(resp.StatusCode, errBody)
 		log.Errorw("ollama return non-200 value", "trace_id", traceID, "model", reqBody.Model, "raw_body", string(errBody), "status", resp.StatusCode)
-		errorResponse(c, reqBody.Model, resp.StatusCode, fmt.Sprintf("upstream service status not 200, body: %s", errBody), upstreamError)
+		errorResponse(c, reqBody.Model, upstreamErr)
 		return
 	}
 
@@ -129,8 +137,9 @@ func handleStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Respon
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
-		log.Errorw("response writer does not support flusher", "trace_id", traceID)
-		errorResponse(c, modelName, http.StatusInternalServerError, "response writer does not support flusher", invalidRequestError)
+		err := errs.InternalServer("response writer does not support flusher", fmt.Errorf("c.Write is not a http.Flusher"))
+		log.Errorw("response writer does not support flusher", "trace_id", traceID, "err", err.Error())
+		errorResponse(c, modelName, err)
 		return
 	}
 	c.Writer.WriteHeader(http.StatusOK)
@@ -171,8 +180,9 @@ func handleNonStreamChat(c *gin.Context, start time.Time, upstreamResp *http.Res
 	log := utils.GetLogger()
 	respBody, err := io.ReadAll(upstreamResp.Body)
 	if err != nil {
+		err := errs.InternalServer("read non-stream ollama response failed", err)
 		log.Errorw("read non-stream ollama response failed", "trace_id", traceID, "err", err.Error())
-		errorResponse(c, modelName, http.StatusInternalServerError, fmt.Sprintf("read non-stream ollama response failed: %v", err), internalError)
+		errorResponse(c, modelName, err)
 		return
 	}
 	log.Infow("chat non-stream completed", "trace_id", traceID, "cost_ms", time.Since(start).Milliseconds(), "model_name", modelName)
