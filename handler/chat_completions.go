@@ -52,6 +52,7 @@ func ChatCompletionsHandler(c *gin.Context) {
 	selected, reused := backendManager.GetBackendBySession(sessionID, backendList)
 	acquired := selected.TryAcquire(ctx, utils.QueueTimeout)
 	if !acquired {
+		metrics.IncQueueTimeout(selected.Endpoint)
 		log.Errorw("backend busy, acquire timeout", "trace_id", traceID, "endpoint", selected.Endpoint)
 		errorResponse(c, reqBody.Model, http.StatusServiceUnavailable, "backend busy, please retry later", upstreamError)
 		return
