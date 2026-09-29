@@ -16,4 +16,8 @@ const (
 
 	MaxBackendConcurrency = 2               // 每个后端最大并发数
 	QueueTimeout          = 5 * time.Second // 并发数达到最大值时，新请求排队最长等待时间
+
+	MaxRetries     = 3                      // 请求ollama最多重试次数
+	InitialBackoff = 200 * time.Millisecond // 初始退避
+	MaxBackoff     = 2 * time.Second        // 退避上限
 )

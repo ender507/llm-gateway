@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -66,37 +65,22 @@ func ChatCompletionsHandler(c *gin.Context) {
 	log.Infow("backend selected", "trace_id", traceID, "model", reqBody.Model, "session_id", sessionID, "endpoint", selected.Endpoint, "reused_session", reused)
 
 	url := selected.Endpoint + "/v1/chat/completions"
-	ollamaReq, err := buildOllamaChatRequest(ctx, url, bodyBytes)
-	if err != nil {
-		err := errs.BadRequest("build ollama request failed", err)
-		log.Errorw("build ollama request failed", "trace_id", traceID, "model", reqBody.Model, "err", err.Error())
-		errorResponse(c, reqBody.Model, err)
-		return
-	}
-
 	start := time.Now()
-	resp, err := http.DefaultClient.Do(ollamaReq)
-	if err != nil {
-		err := errs.UpstreamBadGateway("failed to call ollama", err)
-		log.Errorw("call ollama chat failed", "trace_id", traceID, "model", reqBody.Model, "err", err.Error())
-		errorResponse(c, reqBody.Model, err)
+	var resp *http.Response
+	var callErr *errs.GatewayError
+	if reqBody.Stream {
+		// 流式：单次调用，不重试
+		resp, callErr = callOllama(ctx, url, bodyBytes)
+	} else {
+		// 非流式：开启指数抖动重试
+		resp, callErr = callOllamaWithRetry(ctx, reqBody.Model, url, bodyBytes, traceID)
+	}
+	if callErr != nil {
+		utils.GetLogger().Errorw("call ollama upstream failed", "trace_id", traceID, "model", reqBody.Model, "backend", url, "err_msg", callErr.Message, "retriable", callErr.Retriable)
+		errorResponse(c, reqBody.Model, callErr)
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		errBody, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			err := errs.UpstreamBadGateway(fmt.Sprintf("upstream service status(%v) is not 200, and body read failed", resp.StatusCode), readErr)
-			log.Errorw("read upstream error body failed", "trace_id", traceID, "model", reqBody.Model, "status", resp.StatusCode, "err", err.Error())
-			errorResponse(c, reqBody.Model, err)
-			return
-		}
-		upstreamErr := errs.HandleUpstreamError(resp.StatusCode, errBody)
-		log.Errorw("ollama return non-200 value", "trace_id", traceID, "model", reqBody.Model, "raw_body", string(errBody), "status", resp.StatusCode)
-		errorResponse(c, reqBody.Model, upstreamErr)
-		return
-	}
 
 	if reqBody.Stream {
 		handleStreamChat(c, start, resp, reqBody.Model)
@@ -116,15 +100,6 @@ func readChatRequestBody(c *gin.Context) (body []byte, reqBody ChatCompletionsRe
 		return nil, reqBody, err
 	}
 	return body, reqBody, nil
-}
-
-func buildOllamaChatRequest(ctx context.Context, url string, body []byte) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return req, nil
 }
 
 // handleStreamChat 流式SSE转发

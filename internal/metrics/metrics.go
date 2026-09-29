@@ -42,6 +42,15 @@ var (
 		},
 		[]string{"endpoint"},
 	)
+
+	// 请求 ollama 的重试次数
+	gatewayUpstreamRetryTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gateway_upstream_retry_total",
+			Help: "Total count of upstream retry events, labeled by model, backend and outcome",
+		},
+		[]string{"model", "backend", "detail"},
+	)
 )
 
 // RecordRequest 记录请求
@@ -62,4 +71,8 @@ func SetBackendConcurrency(endpoint string, val int) {
 // IncQueueTimeout 排队超时+1
 func IncQueueTimeout(endpoint string) {
 	queueTimeoutTotal.WithLabelValues(endpoint).Inc()
+}
+
+func IncGatewayUpstreamRetryTotal(model, backend, detail string) {
+	gatewayUpstreamRetryTotal.WithLabelValues(model, backend, detail).Inc()
 }
