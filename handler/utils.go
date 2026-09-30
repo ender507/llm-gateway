@@ -94,7 +94,6 @@ func callOllamaWithRetry(ctx context.Context, modelName, url string, bodyBytes [
 		}
 
 		resp, reqErr := callOllama(ctx, url, bodyBytes)
-		reportBackendResult(backend, reqErr)
 		if reqErr == nil {
 			if attempt > 0 { // 首次成功不打点
 				metrics.IncGatewayUpstreamRetryTotal(modelName, url, "success")

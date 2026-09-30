@@ -45,6 +45,7 @@ func New(cfg Config, endpoint string) *CircuitBreaker {
 		state:       StateClosed,
 		windowStart: time.Now(),
 	}
+	metrics.SetCircuitState(endpoint, 0)
 	return cb
 }
 
@@ -100,16 +101,13 @@ func (cb *CircuitBreaker) Report(success bool) {
 			cb.failureCnt++
 		}
 		total := cb.successCnt + cb.failureCnt
-		if total > cb.cfg.MinRequestsToOpen && float64(cb.failureCnt)/float64(total) >= cb.cfg.FailureThreshold {
+		if total >= cb.cfg.MinRequestsToOpen && float64(cb.failureCnt)/float64(total) >= cb.cfg.FailureThreshold {
 			cb.state = StateOpen
 			cb.openAt = now
 			metrics.IncCircuitOpen(cb.endpoint)
 			cb.updateCircuitState()
 		}
 	case StateHalfOpen:
-		if cb.probeInFlight > 0 {
-			cb.probeInFlight--
-		}
 		if success {
 			cb.probeSuccess++
 		} else {
@@ -126,6 +124,14 @@ func (cb *CircuitBreaker) Report(success bool) {
 			}
 			cb.updateCircuitState()
 		}
+	}
+}
+
+func (cb *CircuitBreaker) ReleaseProbe() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	if cb.state == StateHalfOpen && cb.probeInFlight > 0 {
+		cb.probeInFlight--
 	}
 }
 

@@ -77,6 +77,7 @@ func ChatCompletionsHandler(c *gin.Context) {
 		errorResponse(c, reqBody.Model, err)
 		return
 	}
+	defer selected.CB().ReleaseProbe()
 
 	log.Infow("backend selected", "trace_id", traceID, "model", reqBody.Model, "session_id", sessionID, "endpoint", selected.Endpoint, "reused_session", reused)
 
@@ -86,14 +87,12 @@ func ChatCompletionsHandler(c *gin.Context) {
 	var callErr *errs.GatewayError
 	if reqBody.Stream {
 		// 流式：单次调用，不重试
-		// 出结果直接调用一次 reportBackendResult
 		resp, callErr = callOllama(ctx, url, bodyBytes)
-		reportBackendResult(selected, callErr)
 	} else {
 		// 非流式：开启指数抖动重试
-		// 调用 reportBackendResult 在重试内部实现，不在这里显示调用
 		resp, callErr = callOllamaWithRetry(ctx, reqBody.Model, url, bodyBytes, traceID, selected)
 	}
+	reportBackendResult(selected, callErr)
 	if callErr != nil {
 		utils.GetLogger().Errorw("call ollama upstream failed", "trace_id", traceID, "model", reqBody.Model, "backend", url, "err_msg", callErr.Message, "retriable", callErr.Retriable)
 		errorResponse(c, reqBody.Model, callErr)
