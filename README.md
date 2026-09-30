@@ -26,6 +26,11 @@
     - backend_manager.go: 后端管理器，探活、索引构建、会话亲和等
   - metrics:
     - metrics.go: 声明 metrics 打点
+  - errs:
+    - errs.go: 封装错误信息
+    - http_err.go: 提供 handler 可返回的标准错误
+  - circuitbreaker:
+    - circuitbreaker.go: 后端服务器熔断管理
 
 
 # 快速开始

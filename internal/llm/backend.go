@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ender507/llm-gateway/internal/circuitbreaker"
 	"github.com/ender507/llm-gateway/internal/metrics"
 )
 
@@ -22,6 +23,7 @@ type Backend struct {
 	activeConcurrency int
 	maxConcurrency    int
 	sem               chan struct{} // 信号量通道，容量 = maxConcurrency
+	cb                *circuitbreaker.CircuitBreaker
 	mu                sync.RWMutex
 }
 
@@ -108,4 +110,8 @@ func (b *Backend) TryAcquire(ctx context.Context, queueTimeout time.Duration) bo
 func (b *Backend) Release() {
 	<-b.sem
 	b.DecrConcurrency()
+}
+
+func (b *Backend) CB() *circuitbreaker.CircuitBreaker {
+	return b.cb
 }

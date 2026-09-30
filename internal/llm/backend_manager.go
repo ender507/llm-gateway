@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ender507/llm-gateway/internal/circuitbreaker"
 	"github.com/ender507/llm-gateway/utils"
 )
 
@@ -47,6 +48,13 @@ func (m *BackendManager) Register(endpoint string) {
 		status:         StatusUnhealthy, // 初始标记不健康，等健康检查确认
 		maxConcurrency: utils.MaxBackendConcurrency,
 		sem:            make(chan struct{}, utils.MaxBackendConcurrency),
+		cb: circuitbreaker.New(circuitbreaker.Config{
+			FailureThreshold:  utils.CircuitBreakerFailureThreshold,
+			WindowDuration:    utils.CircuitBreakerWindowDuration,
+			CooldownDuration:  utils.CircuitBreakerCooldownDuration,
+			HalfOpenMaxReq:    utils.CircuitBreakerHalfOpenMaxReq,
+			MinRequestsToOpen: utils.CircuitBreakerMinRequestsToOpen,
+		}, endpoint),
 	}
 }
 

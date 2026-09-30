@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ender507/llm-gateway/internal/errs"
+	"github.com/ender507/llm-gateway/internal/llm"
 	"github.com/ender507/llm-gateway/internal/metrics"
 	"github.com/ender507/llm-gateway/utils"
 )
@@ -77,7 +79,7 @@ func callOllama(ctx context.Context, url string, bodyBytes []byte) (*http.Respon
 	return nil, ge
 }
 
-func callOllamaWithRetry(ctx context.Context, modelName, url string, bodyBytes []byte, traceID any) (*http.Response, *errs.GatewayError) {
+func callOllamaWithRetry(ctx context.Context, modelName, url string, bodyBytes []byte, traceID any, backend *llm.Backend) (*http.Response, *errs.GatewayError) {
 	backoff := utils.InitialBackoff
 	log := utils.GetLogger()
 
@@ -86,8 +88,13 @@ func callOllamaWithRetry(ctx context.Context, modelName, url string, bodyBytes [
 			// 客户端提前断开，直接退出，不重试
 			return nil, errs.UpstreamBadGateway("client context canceled", err)
 		}
+		if !backend.CB().Allow() {
+			// 重试时发现后端服务器熔断，直接报错
+			return nil, errs.UpstreamServiceUnavailable("backend circuit breaker open", fmt.Errorf("backend(%s) circuit breaker open", backend.Endpoint))
+		}
 
 		resp, reqErr := callOllama(ctx, url, bodyBytes)
+		reportBackendResult(backend, reqErr)
 		if reqErr == nil {
 			if attempt > 0 { // 首次成功不打点
 				metrics.IncGatewayUpstreamRetryTotal(modelName, url, "success")
@@ -126,4 +133,13 @@ func waitRetry(ctx context.Context, backoff time.Duration) bool {
 	case <-ctx.Done():
 		return false
 	}
+}
+
+func reportBackendResult(b *llm.Backend, err *errs.GatewayError) {
+	success := true
+	if err != nil {
+		// Retriable=true 的都是调用 ollama 故障，所以判断 backend 调用失败
+		success = !err.Retriable
+	}
+	b.CB().Report(success)
 }

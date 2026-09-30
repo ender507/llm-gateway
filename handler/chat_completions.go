@@ -50,8 +50,19 @@ func ChatCompletionsHandler(c *gin.Context) {
 		errorResponse(c, reqBody.Model, err)
 		return
 	}
+	availableBackendList := make([]*llm.Backend, 0)
+	for _, backend := range backendList {
+		if backend.CB().Allow() {
+			availableBackendList = append(availableBackendList, backend)
+		}
+	}
+	if len(availableBackendList) == 0 {
+		err := errs.UpstreamServiceUnavailable("no available backend", fmt.Errorf("all backends are circuit breaker open"))
+		errorResponse(c, reqBody.Model, err)
+		return
+	}
 	sessionID := c.GetHeader("X-Session-Id")
-	selected, reused := backendManager.GetBackendBySession(sessionID, backendList)
+	selected, reused := backendManager.GetBackendBySession(sessionID, availableBackendList)
 	acquired := selected.TryAcquire(ctx, utils.QueueTimeout)
 	if !acquired {
 		err := errs.UpstreamServiceUnavailable("backend busy", fmt.Errorf("backend %s: acquire timeout after %s", selected.Endpoint, utils.QueueTimeout))
@@ -61,6 +72,11 @@ func ChatCompletionsHandler(c *gin.Context) {
 		return
 	}
 	defer selected.Release()
+	if !selected.CB().BeginCall() {
+		err := errs.UpstreamServiceUnavailable("backend probe quota full", fmt.Errorf("backend %s", selected.Endpoint))
+		errorResponse(c, reqBody.Model, err)
+		return
+	}
 
 	log.Infow("backend selected", "trace_id", traceID, "model", reqBody.Model, "session_id", sessionID, "endpoint", selected.Endpoint, "reused_session", reused)
 
@@ -70,10 +86,13 @@ func ChatCompletionsHandler(c *gin.Context) {
 	var callErr *errs.GatewayError
 	if reqBody.Stream {
 		// 流式：单次调用，不重试
+		// 出结果直接调用一次 reportBackendResult
 		resp, callErr = callOllama(ctx, url, bodyBytes)
+		reportBackendResult(selected, callErr)
 	} else {
 		// 非流式：开启指数抖动重试
-		resp, callErr = callOllamaWithRetry(ctx, reqBody.Model, url, bodyBytes, traceID)
+		// 调用 reportBackendResult 在重试内部实现，不在这里显示调用
+		resp, callErr = callOllamaWithRetry(ctx, reqBody.Model, url, bodyBytes, traceID, selected)
 	}
 	if callErr != nil {
 		utils.GetLogger().Errorw("call ollama upstream failed", "trace_id", traceID, "model", reqBody.Model, "backend", url, "err_msg", callErr.Message, "retriable", callErr.Retriable)

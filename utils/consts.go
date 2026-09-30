@@ -20,4 +20,10 @@ const (
 	MaxRetries     = 3                      // 请求ollama最多重试次数
 	InitialBackoff = 200 * time.Millisecond // 初始退避
 	MaxBackoff     = 2 * time.Second        // 退避上限
+
+	CircuitBreakerFailureThreshold  = 0.3              // 熔断阈值，失败请求占比超过该值则触发熔断
+	CircuitBreakerWindowDuration    = 10 * time.Second // 检查熔断的周期
+	CircuitBreakerCooldownDuration  = 5 * time.Second  // 熔断后恢复的最短等待时长
+	CircuitBreakerHalfOpenMaxReq    = 3                // 半熔断的最多请求数量
+	CircuitBreakerMinRequestsToOpen = 5                // 判断熔断的最少请求数量，防止新周期少量失败导致熔断
 )
